@@ -1,0 +1,35 @@
+version: '3.8'
+
+networks:
+  my-app-network: {}
+
+services:
+  app:
+    build:
+      context: .
+    ports:
+      - "80:80"
+    environment:
+      - APP_ENV=prod
+    depends_on:
+      - mysql
+      - redis
+    networks:
+      - my-app-network
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: symfony
+    ports:
+      - "3306:3306"
+    networks:
+      - my-app-network
+
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+    networks:
+      - my-app-network

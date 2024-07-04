@@ -1,0 +1,55 @@
+stages:
+  - build
+  - deploy
+
+image: docker:latest
+
+services:
+  - docker:dind
+
+variables:
+  TERRAFORM_VERSION: "1.5.3"  # Update to the latest version if necessary
+  DOCKER_COMPOSE_VERSION: "2.3.3"
+
+before_script:
+  - apk add --no-cache curl bash jq
+  - >
+    curl -Lo /tmp/terraform.zip https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip
+    && unzip /tmp/terraform.zip -d /usr/local/bin
+  - chmod +x /usr/local/bin/terraform
+  - terraform version
+  - mkdir -p ~/.ssh
+  - echo "$AWS_SSH_KEY" > ~/.ssh/docker-compose3.pem
+  - chmod 600 ~/.ssh/docker-compose3.pem
+  - echo "$AWS_SSH_KEY"
+
+deploy:
+  stage: deploy
+  script:
+    - |
+      set -euo pipefail
+
+      # Initialize Terraform
+      terraform init
+      terraform plan   
+      # Destroy old instance and security groups if they exist
+      terraform destroy --auto-approve
+
+      # Apply new configuration
+      terraform apply --auto-approve
+      
+      # Retrieve EC2 public IP from Terraform output
+      EC2_PUBLIC_IP=$(terraform output -raw public_ip)
+      echo "EC2 Public IP: $EC2_PUBLIC_IP"
+      # Copy Docker Compose file to remote server
+      scp -R -o StrictHostKeyChecking=no -v -i ~/.ssh/docker-compose3.pem ./* ec2-user@"$EC2_PUBLIC_IP":~/
+      
+      # SSH into the instance and perform Docker-related operations
+      ssh -o StrictHostKeyChecking=no -v -i ~/.ssh/docker-compose3.pem ec2-user@$EC2_PUBLIC_IP "\
+        sudo yum install -y docker \
+        && sudo curl -L "https://github.com/docker/compose/releases/download/v2.21.0/docker-compose-linux-x86_64" -o /usr/local/bin/docker-compose \
+        && sudo chmod +x /usr/local/bin/docker-compose \
+        && sudo systemctl start docker && sudo systemctl enable docker \
+        && sudo docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD \
+        && sudo docker-compose up -d
+      "
