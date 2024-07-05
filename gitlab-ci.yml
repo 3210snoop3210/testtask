@@ -47,4 +47,5 @@ deploy:
 
       terraform apply -auto-approve
       sleep 200
+      terraform init -backend-config="bucket=123terrabucket123" -backend-config="key=terraform.tfstate" -backend-config="region=eu-central-1"
       terraform destroy --auto-approve
